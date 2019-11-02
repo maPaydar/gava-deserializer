@@ -350,7 +350,7 @@ func (g *GavaDeserilizer) readUtf() string {
 
 func (g *GavaDeserilizer) readTCClassDesc() *ClassDataDesc {
 	var cdd = &ClassDataDesc{}
-	var b1 = g.data[0]
+	// var b1 = g.data[0]
 	g.data = g.data[1:]
 
 	//fmt.Println("TC_CLASSDESC - 0x" + hex.EncodeToString([]byte{b1}))
