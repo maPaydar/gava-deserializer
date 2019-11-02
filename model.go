@@ -4,14 +4,15 @@ type ClassField struct {
 	TypeCode  byte
 	Name      string
 	className string
-	Value string
+	Value     string
 }
 
 type ClassDetails struct {
 	ClassName        string
 	RefHandle        int
-	classDescFlags   byte
+	ClassDescFlags   byte
 	FieldDescription []*ClassField
+	ObjectValue string
 }
 
 type ClassDataDesc struct {

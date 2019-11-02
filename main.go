@@ -3,6 +3,7 @@ package gava
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 )
@@ -77,30 +78,28 @@ func (g *GavaDeserilizer) Parse() *ClassDetails {
 
 	//fmt.Println("Contents")
 	for len(g.data) > 0 {
-		return g.readContentElement()
+		c, _ := g.readContentElement()
+		return c
 	}
 
 	return nil
 }
 
-func (g *GavaDeserilizer) readContentElement() *ClassDetails {
+func (g *GavaDeserilizer) readContentElement() (*ClassDetails, string) {
 	switch g.data[0] {
 	case 0x73: //TC_OBJECT
-		return g.readNewObject()
+		return g.readNewObject(), ""
 	case 0x76: //TC_CLASS
 		g.readNewClass()
 		break
 	case 0x75: //TC_ARRAY
-		g.readNewArray()
-		break
+		return nil, g.readNewArray()
 	case 0x74: //TC_STRING
 		fallthrough
 	case 0x7c: //TC_LONGSTRING
-		g.readNewString()
-		break
+		return nil, g.readNewString()
 	case 0x7e: //TC_ENUM
-		g.readNewEnum()
-		break
+		return nil, g.readNewEnum()
 	case 0x72: //TC_CLASSDESC
 		fallthrough
 	case 0x7d: //TC_PROXYCLASSDESC
@@ -119,24 +118,59 @@ func (g *GavaDeserilizer) readContentElement() *ClassDetails {
 		//				handleReset()
 		//				break
 	case 0x77: //TC_BLOCKDATA
-		g.readBlockData()
-		break
+		return nil, g.readBlockData()
 	case 0x7a: //TC_BLOCKDATALONG
-		g.readLongBlockData()
-		break
+		return nil, g.readLongBlockData()
 	default:
 		print("Invalid content element type 0x" + hex.EncodeToString([]byte{g.data[0]}))
 		log.Fatal("Error: Illegal content element type.")
 	}
-	return nil
+	return nil, ""
 }
 
-func (g *GavaDeserilizer) readLongBlockData() {
+func (g *GavaDeserilizer) readBlockData() string {
+	var b1 = g.data[0]
+	g.data = g.data[1:]
+	//fmt.Println("TC_BLOCK_DATA - 0x", hex.EncodeToString([]byte{b1}))
+	if b1 != 0x77 {
+		log.Fatal("b1 != 0x77")
+	}
+	var len = g.data[0] & 0xFF
+	g.data = g.data[1:]
 
+	//fmt.Println(fmt.Sprintf("Length - %d", len))
+
+	var contents = ""
+
+	for i := byte(0); i < len; i++ {
+		contents += hex.EncodeToString([]byte{g.data[0]})
+		g.data = g.data[1:]
+	}
+	//fmt.Println(fmt.Sprintf("Contents - 0x%s", contents))
+	return contents
 }
 
-func (g *GavaDeserilizer) readBlockData() {
+func (g *GavaDeserilizer) readLongBlockData() string {
+	var b1 = g.data[0]
+	g.data = g.data[1:]
+	//fmt.Println("TC_BLOCK_DATA_LONG - 0x", hex.EncodeToString([]byte{b1}))
+	if b1 != 0x7a {
+		log.Fatal("b1 != 0x7a")
+	}
 
+	var len = int(binary.BigEndian.Uint32(g.data[0:4]))
+	g.data = g.data[4:]
+	//fmt.Println(fmt.Sprintf("Length - %d", len))
+
+	var contents = ""
+
+	for i := 0; i < len; i++ {
+		contents += hex.EncodeToString([]byte{g.data[0]})
+		g.data = g.data[1:]
+	}
+
+	//fmt.Println(fmt.Sprintf("Contents - 0x%s", contents))
+	return contents
 }
 
 func (g *GavaDeserilizer) readNullReference() string {
@@ -190,35 +224,35 @@ func (g *GavaDeserilizer) readClassDescInfo(cdd *ClassDataDesc) {
 	g.data = g.data[1:]
 
 	if (b1 & 0x01) == 0x01 {
-
+		classDescFlags += "SC_WRITE_METHOD | "
 	}
 	if (b1 & 0x02) == 0x02 {
-
+		classDescFlags += "SC_SERIALIZABLE | "
 	}
 	if (b1 & 0x04) == 0x04 {
-
+		classDescFlags += "SC_EXTERNALIZABLE | "
 	}
 	if (b1 & 0x08) == 0x08 {
-
+		classDescFlags += "SC_BLOCKDATA | "
 	}
 
-	if len(classDescFlags) > 0 {
-		//classDescFlags = classDescFlags.substring(0, classDescFlags.length() - 3)
+	if classDescFlags != "" {
+		classDescFlags = classDescFlags[:len(classDescFlags)-3]
 	}
-	//this.print("classDescFlags - 0x" + this.byteToHex(b1) + " - " + classDescFlags);
-	//
-	////Store the classDescFlags
-	//cdd.setLastClassDescFlags(b1);		//Set the classDescFlags for the most recently added class
-	//
-	////Validate classDescFlags
-	//if((b1 & 0x02) == 0x02) {
-	//	if((b1 & 0x04) == 0x04) { throw new RuntimeException("Error: Illegal classDescFlags, SC_SERIALIZABLE is not compatible with SC_EXTERNALIZABLE."); }
-	//	if((b1 & 0x08) == 0x08) { throw new RuntimeException("Error: Illegal classDescFlags, SC_SERIALIZABLE is not compatible with SC_BLOCKDATA."); }
-	//} else if((b1 & 0x04) == 0x04) {
-	//	if((b1 & 0x01) == 0x01) { throw new RuntimeException("Error: Illegal classDescFlags, SC_EXTERNALIZABLE is not compatible with SC_WRITE_METHOD."); }
-	//} else if(b1 != 0x00) {
-	//	throw new RuntimeException("Error: Illegal classDescFlags, must include either SC_SERIALIZABLE or SC_EXTERNALIZABLE.");
-	//}
+	//fmt.Println("classDescFlags - 0x" + hex.EncodeToString([]byte{b1}) + " - " + classDescFlags)
+
+	//Store the classDescFlags
+	cdd.ClassDetail[len(cdd.ClassDetail)-1].ClassDescFlags = b1 //Set the classDescFlags for the most recently added class
+
+	//Validate classDescFlags
+	if (b1 & 0x02) == 0x02 {
+		if (b1 & 0x04) == 0x04 { log.Fatal("Error: Illegal classDescFlags, SC_SERIALIZABLE is not compatible with SC_EXTERNALIZABLE."); }
+		if (b1 & 0x08) == 0x08 { log.Fatal("Error: Illegal classDescFlags, SC_SERIALIZABLE is not compatible with SC_BLOCKDATA."); }
+	} else if (b1 & 0x04) == 0x04 {
+		if (b1 & 0x01) == 0x01 { log.Fatal("Error: Illegal classDescFlags, SC_EXTERNALIZABLE is not compatible with SC_WRITE_METHOD."); }
+	} else if b1 != 0x00 {
+		log.Fatal("Error: Illegal classDescFlags, must include either SC_SERIALIZABLE or SC_EXTERNALIZABLE.");
+	}
 	//
 	//fields
 	g.readFields(cdd) //Read field descriptions and add them to the ClassDataDesc
@@ -364,21 +398,19 @@ func (g *GavaDeserilizer) readTCClassDesc() *ClassDataDesc {
 
 	//this.print("serialVersionUID - 0x" + this.byteToHex(this._data.pop()) + " " + this.byteToHex(this._data.pop()) + " " + this.byteToHex(this._data.pop()) + " " + this.byteToHex(this._data.pop()) +
 	//				   " " + this.byteToHex(this._data.pop()) + " " + this.byteToHex(this._data.pop()) + " " + this.byteToHex(this._data.pop()) + " " + this.byteToHex(this._data.pop()));
-	for i := 0; i < 8; i++ {
-		_ = hex.EncodeToString([]byte{g.data[0]})
-		g.data = g.data[1:]
-	}
+	_ = hex.EncodeToString(g.data[0:8])
+	g.data = g.data[8:]
 
-	g.handleValue++
 	cdd.ClassDetail[0].RefHandle = g.handleValue
+	g.handleValue++
 
 	g.readClassDescInfo(cdd)
 
 	return cdd
 }
 
-func (g *GavaDeserilizer) readNewEnum() {
-
+func (g *GavaDeserilizer) readNewEnum() string {
+	return ""
 }
 
 func (g *GavaDeserilizer) readNewString() string {
@@ -543,6 +575,22 @@ func (g *GavaDeserilizer) readClassData(cdd *ClassDataDesc) *ClassDetails {
 				cf.Value = value
 			}
 		}
+
+		if (g.isScSerializable(cd) && g.isSCWriteMethod(cd)) || (g.isSCExternalizable(cd) && g.isSCBlockData(cd)) {
+			//Start the object annotations section and indent
+			//fmt.Println("objectAnnotation")
+			//Loop until we have a TC_ENDBLOCKDATA
+			var value = ""
+			for g.data[0] != 0x78 {
+				//Read a content element
+				_, v := g.readContentElement()
+				value += v
+			}
+			cd.ObjectValue = value
+			//Pop and print the TC_ENDBLOCKDATA element
+			g.data = g.data[1:]
+			//fmt.Println("TC_ENDBLOCKDATA - 0x78")
+		}
 		return cd
 	}
 	return nil
@@ -671,7 +719,9 @@ func (g *GavaDeserilizer) readObjectField() string {
 	//fmt.Println("(object)")
 	switch g.data[0] {
 	case 0x73:
-		g.readNewObject()
+		f := g.readNewObject()
+		s, _ := json.Marshal(f)
+		return string(s)
 	case 0x71:
 		g.readPrevObject()
 	case 0x70:
@@ -686,8 +736,20 @@ func (g *GavaDeserilizer) readObjectField() string {
 	return ""
 }
 
+func (g *GavaDeserilizer) isSCBlockData(cd *ClassDetails) bool {
+	return cd.ClassDescFlags&0x08 == 0x08
+}
+
+func (g *GavaDeserilizer) isSCExternalizable(cd *ClassDetails) bool {
+	return cd.ClassDescFlags&0x04 == 0x04
+}
+
 func (g *GavaDeserilizer) isScSerializable(details *ClassDetails) bool {
-	return true
+	return (details.ClassDescFlags & 0x02) == 0x02
+}
+
+func (g *GavaDeserilizer) isSCWriteMethod(cd *ClassDetails) bool {
+	return cd.ClassDescFlags&0x01 == 0x01
 }
 
 func (g *GavaDeserilizer) readClassDesc() *ClassDataDesc {
