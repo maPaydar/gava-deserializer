@@ -2,17 +2,17 @@ package test
 
 import (
 	"bufio"
-	"fmt"
-	gava2 "github.com/maPaydar/gava-ser"
-	"github.com/stretchr/testify/assert"
 	"os"
 	"testing"
+
+	"github.com/maPaydar/gava-deserializer"
+	"github.com/stretchr/testify/assert"
 )
 
 func readLine(path string) string {
 	inFile, err := os.Open(path)
 	if err != nil {
-		fmt.Println(err.Error() + `: ` + path)
+		//fmt.Println(err.Error() + `: ` + path)
 		return ""
 	}
 	defer inFile.Close()
@@ -27,8 +27,8 @@ func readLine(path string) string {
 func Test(t *testing.T) {
 	inBytes := []byte(readLine("./test.txt"))
 
-	gava := gava2.NewGavaDeserilizer(inBytes)
-	parsedObject := gava.Parse()
+	g := gava.NewGavaDeserilizer(inBytes)
+	parsedObject := g.Parse()
 
 	assert.NotNil(t, parsedObject)
 	assert.Equal(t, len(parsedObject.FieldDescription), 3)
